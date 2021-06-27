@@ -6,6 +6,16 @@
 ## 解决方案：
 使用`PyMuPDF`对图片进行合并
 
+## 安装依赖：
+```bash
+pip install -r requirements.py
+```
+
+## 使用方式：
+```bash
+python downloader.py
+```
+
 ## ToDo List
 1. 如何解决`thesis.lib.sjtu.edu.cn`限制访问次数的问题
 2. 引入协程，提高并发（以前试过，不过由于网站太慢了，并行就崩了），多进程的版本可以看[commit](https://github.com/olixu/SJTU_Thesis_Crawler/tree/7d712f009195f339d1cc42e6bf841db57f881052)
