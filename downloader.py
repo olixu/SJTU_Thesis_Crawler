@@ -9,10 +9,10 @@
 '''
 
 # here put the import lib
+from __future__ import print_function, unicode_literals
 import os
 import sys
 import time
-import argparse
 import random
 import json
 import shutil
@@ -21,12 +21,7 @@ from urllib.parse import quote
 import requests
 from lxml import etree
 import fitz
-import pdb
-
-# To DO list
-# 1. 可以抓取元数据信息
-# 2. 进行选择抓取多少个page的pdf数据
-# 3. 
+from PyInquirer import style_from_dict, Token, prompt
 
 def main():
     """
@@ -34,19 +29,16 @@ def main():
 
     调用方式：python downloader.py --pages '1-2' --major '计算机'
     """
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--content', type=str, required=True)    #   
-    parser.add_argument('--choose_key', type=str, required=True) # 1.主题(topic) 2.题名() 3.关键词() 4.作者() 5.院系 6.(专业) 7.(导师) 8.(年份)
-    parser.add_argument('--xuewei', type=str, required=True) # 0：硕博论文 1：博士论文 2：硕士论文
-    parser.add_argument('--px', type=str, required=True) # 1：按题名字顺序排序 2：按学位年度倒排序
-    parser.add_argument('--page', type=str, required=True)  # 希望抓取多少页的数据，一页的元数据是20篇论文
-    args = parser.parse_args()
-
-    info_url = "http://thesis.lib.sjtu.edu.cn/sub.asp?content={}&choose_key={}&xuewei={}&px={}&page=".format(quote(args.content), args.choose_key, args.xuewei, args.px)
-    pages = args.page.split('-')
-    pages = [int(pages[0]), int(pages[1])]
+    answers = search_arguments()
+    info_url, pages = arguments_extract(answers)
     papers = download_main_info(info_url, pages)
-    pdb.set_trace()
+    will_download = confirmation(papers)['confirmation']
+    if will_download:
+        paper_download(papers)
+    else:
+        print('Bye!')
+
+def paper_download(papers):
     jpg_dir = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()) + "".join(random.sample('zyxwvutsrqponmlkjihgfedcba23429837498234',5))
     for paper in papers:
         print(100*'@')
@@ -54,20 +46,108 @@ def main():
         if verify_name(paper_filename):
             print("论文{}已经存在".format(paper_filename))
             continue
-        print(paper_filename)
-        print(paper)
         print("正在下载论文：", paper['filename'])
-        print(paper['filename'])
-        #sys.exit()
-       # jpg_dir = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime()) 
         init(jpg_dir=jpg_dir)
         try:
             download_jpg(paper['link'], jpg_dir=jpg_dir)
             merge_pdf(paper_filename, jpg_dir=jpg_dir)
-        except:
-            pass
+        except Exception as e:
+            print(e)
+
+def search_arguments():
+    style = style_from_dict({
+                Token.Separator: '#cc5454',
+                Token.QuestionMark: '#673ab7 bold',
+                Token.Selected: '#cc5454',  # default
+                Token.Pointer: '#673ab7 bold',
+                Token.Instruction: '',  # default
+                Token.Answer: '#f44336 bold',
+                Token.Question: '',
+                })
+
+    questions = [
+        {
+            'type': 'list',
+            'message': '请选择检索方式',
+            'name': 'choose_key',
+            'choices': [
+                '主题',
+                '题名',
+                '关键词',
+                '作者',
+                '院系',
+                '专业',
+                '导师',
+                '年份'
+
+            ]
+        },
+        {
+            'type': 'list',
+            'message': '请选择检索硕士或博士论文',
+            'name': 'xuewei',
+            'choices': [
+                '硕士',
+                '博士',
+                '硕士及博士'
+            ]
+        },
+        {
+            'type': 'list',
+            'message': '请选择排序方式',
+            'name': 'px',
+            'choices': [
+                '按题名字顺序排序',
+                '按学位年度倒排序'
+            ]
+        },
+        {
+            'type': 'input',
+            'name': 'content',
+            'message': '请输入你的检索词'
+        },
+        {
+            'type': 'input',
+            'name': 'page',
+            'message': '请输入想要检索的页面范围，一页20篇论文'
+            # 这里需要添加validate关键字
+        }
+    ]
+    answers = prompt(questions, style=style)
+    return answers
+
+def arguments_extract(answers):
+    choose_key = {'主题':'topic', '题名':'title', '关键词':'keyword', '作者':'author', '院系':'department', '专业':'subject', '导师':'teacher', '年份':'year'}
+    xuewei = {'硕士及博士':'0', '博士':'1', '硕士':'2'}
+    px = {'按题名字顺序排序':'1', '按学位年度倒排序':'2'}
+    info_url = "http://thesis.lib.sjtu.edu.cn/sub.asp?content={}&choose_key={}&xuewei={}&px={}&page=".format(quote(answers['content']), \
+        choose_key[answers['choose_key']], \
+        xuewei[answers['xuewei']], \
+        px[answers['px']])
+    print(info_url)
+    pages = answers['page'].split('-')
+    pages = [int(pages[0]), int(pages[1])]
+    return info_url, pages
+
+def confirmation(papers):
+    print("\033[\033[1;32m 检索到了以下{}篇文章\033[0m".format(len(papers)))
+    for i in papers:
+        print('\033[1;31m 题目\033[0m', i['filename'], '\033[1;34m 作者\033[0m', i['author'], '\033[1;36m 导师\033[0m', i['mentor'], '\033[1;35m 年份\033[0m', i['year'])
+        # 这里需要格式化输出对其一下
+    questions = [
+        {
+            'type': 'confirm',
+            'message': "确认下载{}篇文章吗？".format(len(papers)),
+            'name': 'confirmation',
+            'default': 'True'
+        }
+    ]
+    answers = prompt(questions)
+    return answers
 
 def verify_name(paper_filename):
+    if not os.path.exists('./papers'):
+        os.mkdir('./papers')
     if paper_filename in os.listdir('./papers'):
         return True
     return False
@@ -114,7 +194,8 @@ def download_main_info(info_url: str, pages: list):
                 info_dict['link'] = link
                 papers.append(info_dict)
             except Exception as e:
-                print(e)
+                #print(e)
+                pass
     print("总共抓取到{}个元数据信息".format(len(papers)))
     return papers
 
@@ -129,54 +210,29 @@ def download_jpg(url: str, jpg_dir: str):
     result = requests.Session()
     print("开始获取图片地址")
     response = result.get(url, headers=headers, allow_redirects=False)
-    #print(response.content)
-    #print(response.status_code)
-    #print(response.headers['Location'])
     url = response.headers['Location']
     response = result.get(url, headers=headers, allow_redirects=False)
-    #print(response.content)
-    #print(response.status_code)
-    #print(response.headers['Location'])
     url = response.headers['Location']
     response = result.get(url, headers=headers, allow_redirects=False)
-    #print(response.content)
-    #print(response.status_code)
-    #print(response.headers['Location'])
     url_bix = response.headers['Location'].split('?')[1]
     url = "http://thesis.lib.sjtu.edu.cn:8443/read/jumpServlet?page=1&" + url_bix
-    #print(url)
     response = result.get(url, headers=headers, allow_redirects=False)
-    #print(response)
-    #print(response.content)
-    #print(type(response))
-    #print(type(response.content))
-    #print(json.loads(response.content.decode()))
     urls = json.loads(response.content.decode())
-    #print(urls['list'][0]['src'])
-    #print(urls.keys())
     print("已经获取到图片地址")
     i = 1
     while(True):
-        #print("在while循环里")
         fig_url = "http://thesis.lib.sjtu.edu.cn:8443/read/" + urls['list'][0]['src'].split('_')[0] + "_{0:05d}".format(i) + ".jpg"
-        #print(fig_url)
         response = result.get(fig_url, headers=headers).content
-        #print(response.content)
-        #print(response)
-        #print(type(response))
-        #print(len(response))
         while len(response) < 2000 and len(response) != 1049:
             response = result.get(fig_url, headers=headers).content
-            time.sleep(1)
         if len(response) == 1049:
-            print(response)
+            #print(response)
+            #print("资源无法访问了，网站挂了")
             break
         with open('./{}/{}.jpg'.format(jpg_dir, i), 'wb') as f:
             f.write(response)
-
         i = i + 1
-        print(i)
-        time.sleep(1)
+        print("正在采集第{}页".format(i))
 
 def merge_pdf(paper_filename, jpg_dir):
     doc = fitz.open()
@@ -184,13 +240,12 @@ def merge_pdf(paper_filename, jpg_dir):
     img_path = './{}/'.format(jpg_dir)
     if len(os.listdir('./{}/'.format(jpg_dir)))<100:
         print("文章{}下载错误，跳过".format(paper_filename))
+        shutil.rmtree('./{}'.format(jpg_dir))
         return
     for img in os.listdir('./{}/'.format(jpg_dir)):
         imgs.append(img)
     imgs.sort(key=lambda x:int(x[:-4]))
-    #print(imgs)
     for img in imgs:
-        #print(img_path + img)
         img_file = img_path + img
         imgdoc = fitz.open(img_file)
         pdfbytes = imgdoc.convertToPDF()
@@ -200,6 +255,7 @@ def merge_pdf(paper_filename, jpg_dir):
     filename = './papers/' + paper_filename
     doc.save(filename)
     doc.close()
+    shutil.rmtree('./{}'.format(jpg_dir))
 
 if __name__=='__main__':
     main()
